@@ -1,0 +1,66 @@
+{
+	"name": "bronze_ds",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "datalake_ls",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "Parquet",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"folderPath": "rawdata",
+				"fileSystem": "bronze"
+			},
+			"compressionCodec": "snappy"
+		},
+		"schema": [
+			{
+				"name": "branch_id",
+				"type": "UTF8"
+			},
+			{
+				"name": "dealer_id",
+				"type": "UTF8"
+			},
+			{
+				"name": "model_id",
+				"type": "UTF8"
+			},
+			{
+				"name": "revenue",
+				"type": "INT64"
+			},
+			{
+				"name": "units_sold",
+				"type": "INT64"
+			},
+			{
+				"name": "date_id",
+				"type": "UTF8"
+			},
+			{
+				"name": "day",
+				"type": "INT32"
+			},
+			{
+				"name": "month",
+				"type": "INT32"
+			},
+			{
+				"name": "year",
+				"type": "INT32"
+			},
+			{
+				"name": "branch_name",
+				"type": "UTF8"
+			},
+			{
+				"name": "dealer_name",
+				"type": "UTF8"
+			}
+		]
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

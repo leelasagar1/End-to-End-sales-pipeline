@@ -1,0 +1,9 @@
+{
+	"name": "sagar-project-data-factory",
+	"location": "eastus",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "418b007b-bc1b-45c0-bc21-8800e59d15c2",
+		"tenantId": "475ed25e-5f18-4676-9b4b-62ba6299164b"
+	}
+}

@@ -1,0 +1,355 @@
+{
+	"name": "incremental load",
+	"properties": {
+		"activities": [
+			{
+				"name": "get last load",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "sql_ds",
+						"type": "DatasetReference",
+						"parameters": {
+							"table_name": "watermark_table",
+							"schema_name": "dbo"
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "get current load",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "select max(date_id) as max_date from source_cars_data",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "sql_ds",
+						"type": "DatasetReference",
+						"parameters": {
+							"table_name": "source_cars_data",
+							"schema_name": "dbo"
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "copy incremental data",
+				"type": "Copy",
+				"dependsOn": [
+					{
+						"activity": "get last load",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					},
+					{
+						"activity": "get current load",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "select * from source_cars_data\nwhere date_id > '@{activity('get last load').output.value[0].last_load}'\nand  date_id <= '@{activity('get current load').output.value[0].max_date}' ",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"sink": {
+						"type": "ParquetSink",
+						"storeSettings": {
+							"type": "AzureBlobFSWriteSettings"
+						},
+						"formatSettings": {
+							"type": "ParquetWriteSettings"
+						}
+					},
+					"enableStaging": false,
+					"translator": {
+						"type": "TabularTranslator",
+						"typeConversion": true,
+						"typeConversionSettings": {
+							"allowDataTruncation": true,
+							"treatBooleanAsNumber": false
+						}
+					}
+				},
+				"inputs": [
+					{
+						"referenceName": "sql_ds",
+						"type": "DatasetReference",
+						"parameters": {
+							"table_name": "source_cars_data",
+							"schema_name": "dbo"
+						}
+					}
+				],
+				"outputs": [
+					{
+						"referenceName": "bronze_ds",
+						"type": "DatasetReference"
+					}
+				]
+			},
+			{
+				"name": "Update Watermark table",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "copy incremental data",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[dbo].[UpdateWatermarkTable]",
+					"storedProcedureParameters": {
+						"lastload": {
+							"value": {
+								"value": "@activity('get current load').output.value[0].max_date",
+								"type": "Expression"
+							}
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "sql_db_ls",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "silver notebook",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "Update Watermark table",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Users/varalakshmi.gudhe@outlook.com/cars_project/silver_notebook"
+				},
+				"linkedServiceName": {
+					"referenceName": "databricks_ls",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "dim_dealer",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "silver notebook",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Users/varalakshmi.gudhe@outlook.com/cars_project/gold_dim_dealer"
+				},
+				"linkedServiceName": {
+					"referenceName": "databricks_ls",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "dim_branch",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "silver notebook",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Users/varalakshmi.gudhe@outlook.com/cars_project/gold_dim_branch"
+				},
+				"linkedServiceName": {
+					"referenceName": "databricks_ls",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "dim_date",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "silver notebook",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Users/varalakshmi.gudhe@outlook.com/cars_project/gold_dim_date"
+				},
+				"linkedServiceName": {
+					"referenceName": "databricks_ls",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "dim_model",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "silver notebook",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Users/varalakshmi.gudhe@outlook.com/cars_project/gold_dim_model"
+				},
+				"linkedServiceName": {
+					"referenceName": "databricks_ls",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "fact_sales",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "dim_dealer",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					},
+					{
+						"activity": "dim_branch",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					},
+					{
+						"activity": "dim_date",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					},
+					{
+						"activity": "dim_model",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Users/varalakshmi.gudhe@outlook.com/cars_project/gold_fact_sales"
+				},
+				"linkedServiceName": {
+					"referenceName": "databricks_ls",
+					"type": "LinkedServiceReference"
+				}
+			}
+		],
+		"annotations": [],
+		"lastPublishTime": "2025-03-04T07:05:01Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}
